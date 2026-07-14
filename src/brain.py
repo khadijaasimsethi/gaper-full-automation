@@ -51,10 +51,10 @@ def draft_reply(thread_data: dict) -> dict:
     brand_profile = get_brand_profile()
     guidelines = thread_data.get("guidelines", "").lower()
     
-    # Check if we need Ghost Mode (no self-promotion allowed)
-    is_ghost = any(word in guidelines for word in ["no promo", "no self-promo", "spam", "forbid", "no advertising", "no links"])
+    # Check if we need Ghost Mode (only when promo/links are strictly and explicitly forbidden)
+    is_ghost = any(word in guidelines for word in ["strictly no links", "no promotional links", "advertising forbidden", "no external links", "links not allowed"])
     if is_ghost:
-        logger.info("👻 Guidelines forbid self-promotion. Activating GHOST MODE (no Gaper links).")
+        logger.info("👻 Guidelines strictly forbid self-promotion. Activating GHOST MODE (no Gaper links).")
     else:
         logger.info("🔗 Standard Mode: Integrating natural backlink citation.")
         

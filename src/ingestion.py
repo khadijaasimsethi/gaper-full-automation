@@ -58,7 +58,7 @@ class Type1ApiRss(IngestionStrategy):
                             "content": data.get("description", "") + "\n" + data.get("body_markdown", ""),
                             "comments_count": data.get("comments_count", 0),
                             "comments": [],  # Can fetch comments API if needed
-                            "guidelines": "No self-promotion allowed unless relevant."
+                            "guidelines": "Guidelines: Add value. Cite relevant resources."
                         }
             except Exception as e:
                 logger.warning(f"[Type 1] Dev.to API parsing failed: {e}")
