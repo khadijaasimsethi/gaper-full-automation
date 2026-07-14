@@ -3,8 +3,7 @@ import sys
 import uvicorn
 from src.database import init_db
 from src.gaper_scraper import scrape_gaper_brand, get_brand_profile
-from src.discovery import discover_threads
-from src.pipeline import run_pipeline, approve_and_queue_post
+from src.pipeline import run_pipeline, approve_and_queue_post, run_global_discovery
 import config
 
 def main():
@@ -30,11 +29,9 @@ def main():
         return
         
     if args.discover:
-        print("Running discovery pipeline (Google SERP and RSS checks)...")
-        urls = discover_threads()
-        print(f"\nDiscovery finished! Found {len(urls)} fresh opportunities.")
-        for u in urls:
-            print(f"- {u}")
+        print("Running global automated discovery and pipeline execution...")
+        count = run_global_discovery()
+        print(f"\nAutomated discovery complete! Processed {count} opportunities.")
         return
         
     if args.process:

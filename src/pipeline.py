@@ -199,7 +199,17 @@ def run_pipeline(url: str) -> dict:
         thread.status = 'pending_approval' # Holds for user review or dashboard approval
         db.commit()
         
+        thread_id = thread.id
         logger.info(f"Pipeline complete for {url}. Result in status: {thread.status}")
+        
+        # Auto-pilot automated execution
+        if config.AUTO_PILOT:
+            logger.info(f"⚡ AUTO_PILOT enabled. Automatically approving and queueing post task for thread {thread_id}")
+            db.close() # Close to avoid db lock in next function call
+            approve_and_queue_post(thread_id)
+            db = SessionLocal() # Reopen session for final check
+            thread = db.query(ThreadMemory).filter(ThreadMemory.id == thread_id).first()
+            
         return {
             "thread_id": thread.id,
             "url": thread.url,
@@ -240,3 +250,39 @@ def approve_and_queue_post(thread_id: int):
         logger.info(f"Thread {thread_id} approved and sent to broker queue.")
     finally:
         db.close()
+
+def run_global_discovery() -> int:
+    """
+    Runs global discovery (threads and directories).
+    For any fresh threads found, runs the pipeline on them.
+    If AUTO_PILOT is True, they will automatically be drafted and posted!
+    For any new missing directory listings found, generates pitches and sends emails!
+    """
+    logger.info("Starting Global Automated Discovery Job...")
+    from src.discovery import discover_threads
+    
+    # 1. Discover fresh thread URLs
+    fresh_urls = discover_threads()
+    
+    # 2. Run pipeline for each fresh URL
+    for url in fresh_urls:
+        try:
+            run_pipeline(url)
+        except Exception as e:
+            logger.error(f"Failed to process discovered URL {url}: {e}")
+            
+    # 3. For any new listing opportunities in 'discovered' status, process them
+    db = SessionLocal()
+    count = 0
+    try:
+        new_opps = db.query(ListingOpportunity).filter(ListingOpportunity.status == 'discovered').all()
+        count = len(new_opps)
+        for opp in new_opps:
+            try:
+                trigger_outreach_pitch(opp.id)
+            except Exception as e:
+                logger.error(f"Failed to auto-outreach for opportunity {opp.url}: {e}")
+    finally:
+        db.close()
+        
+    return len(fresh_urls) + count

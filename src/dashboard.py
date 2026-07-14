@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from src.database import SessionLocal, ThreadMemory, ListingOpportunity
 from src.gaper_scraper import get_brand_profile, scrape_gaper_brand
 from src.discovery import discover_threads
-from src.pipeline import approve_and_queue_post, run_pipeline, trigger_outreach_pitch
+from src.pipeline import approve_and_queue_post, run_pipeline, trigger_outreach_pitch, run_global_discovery
 from src.brain import qa_loop, evaluate_seo_geo_aeo
 import config
 
@@ -365,7 +365,8 @@ HTML_TEMPLATE = """
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: #fff;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
             padding: 10px;
             display: flex;
             align-items: center;
@@ -761,8 +762,8 @@ def api_opportunities():
 
 @app.post("/api/discover")
 def api_discover():
-    urls = discover_threads()
-    return {"count": len(urls), "urls": urls}
+    count = run_global_discovery()
+    return {"count": count}
 
 @app.post("/api/run-pipeline")
 def api_run_pipeline(url: str = Form(...)):

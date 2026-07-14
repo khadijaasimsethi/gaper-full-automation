@@ -11,6 +11,7 @@ DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "gaper_agent.db"))
 # System Settings
 CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", "30"))
 USE_CELERY = os.getenv("USE_CELERY", "False").lower() in ("true", "1", "yes")
+AUTO_PILOT = os.getenv("AUTO_PILOT", "False").lower() in ("true", "1", "yes")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # API Keys
