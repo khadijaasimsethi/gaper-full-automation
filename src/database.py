@@ -86,7 +86,7 @@ def is_duplicate(url: str, current_comments: int = 0) -> bool:
             return False
         
         # If the number of comments has increased, we should process it again
-        if current_comments > thread.comment_count:
+        if current_comments > (thread.comment_count or 0):
             # Update comment count in DB so we don't trigger again unless it increases more
             thread.comment_count = current_comments
             thread.status = 'processing'

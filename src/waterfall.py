@@ -1,3 +1,96 @@
+# import logging
+# import urllib.parse
+# from src.database import get_platform_config, set_platform_config
+# from src.discovery import detect_missing_gaper_listing
+# from src.ingestion import (
+#     Type1ApiRss,
+#     Type2StaticSoup,
+#     Type3PlaywrightAuth,
+#     Type4LlmVision,
+#     BlockedException,
+#     DomParseException,
+#     IngestionException
+# )
+# import config
+
+# logger = logging.getLogger(__name__)
+
+# STRATEGIES = {
+#     "Type1ApiRss": Type1ApiRss(),
+#     "Type2StaticSoup": Type2StaticSoup(),
+#     "Type3PlaywrightAuth": Type3PlaywrightAuth(),
+#     "Type4LlmVision": Type4LlmVision()
+# }
+
+# def ingest_thread(url: str) -> dict:
+#     """
+#     Implements the Waterfall Ingestion Escalation (Block 4).
+#     1. Checks if a successful ingestion strategy is already cached for the domain.
+#     2. Runs the cached strategy first. If it succeeds, returns.
+#     3. If cached strategy fails or doesn't exist, escalates through config.ESCALATION_ORDER.
+#     4. Caches the successful strategy name on success.
+#     5. Checks if Gaper is missing from page content using detect_missing_gaper_listing.
+#     """
+#     domain = urllib.parse.urlparse(url).netloc
+#     cached_strategy_name = get_platform_config(domain)
+    
+#     # Try cached strategy first
+#     if cached_strategy_name and cached_strategy_name in STRATEGIES:
+#         logger.info(f"Using cached strategy '{cached_strategy_name}' for domain '{domain}'")
+#         try:
+#             strategy = STRATEGIES[cached_strategy_name]
+#             data = strategy.fetch_thread_data(url)
+#             # Run missing listing detection
+#             detect_missing_gaper_listing(url, data.get("content", ""))
+#             return data
+#         except IngestionException as e:
+#             logger.warning(f"Cached strategy '{cached_strategy_name}' failed for {url}: {e}. Falling back to waterfall escalation...")
+            
+#     # Waterfall Escalation
+#     last_error = None
+#     successful_strategy = None
+#     parsed_data = None
+    
+#     # Always check if we should try Type1 first for dev.to or specific APIs
+#     escalation_list = []
+#     if "dev.to" in url or "feed" in url:
+#         escalation_list.append("Type1ApiRss")
+        
+#     escalation_list.extend(config.ESCALATION_ORDER)
+    
+#     # Remove duplicates while preserving order
+#     seen = set()
+#     escalation_order = [x for x in escalation_list if not (x in seen or seen.add(x))]
+    
+#     for strategy_name in escalation_order:
+#         if strategy_name not in STRATEGIES:
+#             continue
+            
+#         logger.info(f"Escalating: Trying strategy '{strategy_name}' for URL: {url}")
+#         try:
+#             strategy = STRATEGIES[strategy_name]
+#             parsed_data = strategy.fetch_thread_data(url)
+#             successful_strategy = strategy_name
+#             break
+#         except (BlockedException, DomParseException) as exc:
+#             logger.warning(f"Strategy '{strategy_name}' failed with recoverable exception: {exc}")
+#             last_error = exc
+#         except Exception as e:
+#             logger.error(f"Strategy '{strategy_name}' failed with unexpected error: {e}")
+#             last_error = e
+            
+#     if successful_strategy and parsed_data:
+#         logger.info(f"🎉 Ingestion Success! Cacheing strategy '{successful_strategy}' for domain '{domain}'")
+#         set_platform_config(domain, successful_strategy)
+#         # Run missing listing detection
+#         detect_missing_gaper_listing(url, parsed_data.get("content", ""))
+#         return parsed_data
+        
+#     raise IngestionException(f"All ingestion strategies failed for {url}. Last error: {last_error}")
+
+
+
+
 import logging
 import urllib.parse
 from src.database import get_platform_config, set_platform_config
@@ -22,50 +115,44 @@ STRATEGIES = {
     "Type4LlmVision": Type4LlmVision()
 }
 
+
 def ingest_thread(url: str) -> dict:
     """
     Implements the Waterfall Ingestion Escalation (Block 4).
-    1. Checks if a successful ingestion strategy is already cached for the domain.
-    2. Runs the cached strategy first. If it succeeds, returns.
-    3. If cached strategy fails or doesn't exist, escalates through config.ESCALATION_ORDER.
-    4. Caches the successful strategy name on success.
-    5. Checks if Gaper is missing from page content using detect_missing_gaper_listing.
     """
     domain = urllib.parse.urlparse(url).netloc
     cached_strategy_name = get_platform_config(domain)
-    
-    # Try cached strategy first
+
     if cached_strategy_name and cached_strategy_name in STRATEGIES:
         logger.info(f"Using cached strategy '{cached_strategy_name}' for domain '{domain}'")
         try:
             strategy = STRATEGIES[cached_strategy_name]
             data = strategy.fetch_thread_data(url)
-            # Run missing listing detection
-            detect_missing_gaper_listing(url, data.get("content", ""))
+            # data.get("content", "") does NOT protect against an explicit
+            # None value (only a missing key) - a strategy (esp. Type4/
+            # Gemini) can return {"content": None}, which crashed
+            # detect_missing_gaper_listing's .lower() call downstream.
+            detect_missing_gaper_listing(url, data.get("content") or "")
             return data
         except IngestionException as e:
             logger.warning(f"Cached strategy '{cached_strategy_name}' failed for {url}: {e}. Falling back to waterfall escalation...")
-            
-    # Waterfall Escalation
+
     last_error = None
     successful_strategy = None
     parsed_data = None
-    
-    # Always check if we should try Type1 first for dev.to or specific APIs
+
     escalation_list = []
     if "dev.to" in url or "feed" in url:
         escalation_list.append("Type1ApiRss")
-        
     escalation_list.extend(config.ESCALATION_ORDER)
-    
-    # Remove duplicates while preserving order
+
     seen = set()
     escalation_order = [x for x in escalation_list if not (x in seen or seen.add(x))]
-    
+
     for strategy_name in escalation_order:
         if strategy_name not in STRATEGIES:
             continue
-            
+
         logger.info(f"Escalating: Trying strategy '{strategy_name}' for URL: {url}")
         try:
             strategy = STRATEGIES[strategy_name]
@@ -78,12 +165,11 @@ def ingest_thread(url: str) -> dict:
         except Exception as e:
             logger.error(f"Strategy '{strategy_name}' failed with unexpected error: {e}")
             last_error = e
-            
+
     if successful_strategy and parsed_data:
-        logger.info(f"🎉 Ingestion Success! Cacheing strategy '{successful_strategy}' for domain '{domain}'")
+        logger.info(f"Ingestion success! Caching strategy '{successful_strategy}' for domain '{domain}'")
         set_platform_config(domain, successful_strategy)
-        # Run missing listing detection
-        detect_missing_gaper_listing(url, parsed_data.get("content", ""))
+        detect_missing_gaper_listing(url, parsed_data.get("content") or "")
         return parsed_data
-        
+
     raise IngestionException(f"All ingestion strategies failed for {url}. Last error: {last_error}")
