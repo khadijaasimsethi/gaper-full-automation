@@ -141,6 +141,7 @@ def get_credentials():
         "contra": {
             
              "email": os.getenv("CONTRA_EMAIL", "")
+             
         },
         
         "notion": {
@@ -207,3 +208,15 @@ PLATFORM_SETTINGS = {
         "rate_limit_seconds": 600
     }
 }
+
+CONTRA_FEED_URL = "https://contra.com/community/for-you"
+CONTRA_PROFILE_URL = "https://contra.com/khadija_asim_t85rggyo/posts"
+
+# Notion Database URL
+NOTION_DATABASE_URL = os.getenv("NOTION_DATABASE_URL", "")
+
+
+CONTRA_FEED_URL = "https://contra.com/community/for-you?r=khadija_asim_t85rggyo"
+
+# Notion Database URL  
+NOTION_DATABASE_URL = os.getenv("NOTION_DATABASE_URL", "https://www.notion.so/khadijasethi/39b67494474d81c58d32fa649bf8aeb0")

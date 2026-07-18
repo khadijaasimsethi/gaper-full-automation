@@ -396,14 +396,14 @@ class NotionAdapter(PlatformAdapter):
             "Notion-Version": "2022-06-28"
         }
         payload = {
-            "parent": {"database_id": creds["database_id"]},
-            "properties": {
-                "Title": {"title": [{"text": {"content": f"Backlink Opportunity - {target_url[:50]}"}}]},
-                "URL": {"url": target_url},
-                "Type": {"select": {"name": "Ghost" if is_ghost else "Citation"}},
-                "Status": {"status": {"name": "Discovered"}}
-            }
-        }
+    "parent": {"database_id": creds["database_id"]},
+    "properties": {
+        "Name": {"title": [{"text": {"content": f"Backlink Opportunity - {target_url[:50]}"}}]},
+        "url": {"url": target_url},
+        "type": {"select": {"name": "Ghost" if is_ghost else "Citation"}},
+        "Status": {"status": {"name": "Not started"}}
+    }
+}
         try:
             res = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=10)
             if res.status_code == 200:
@@ -494,82 +494,99 @@ class PinterestAdapter(PlatformAdapter):
         logger.warning("[Pinterest] Adapter not yet implemented - nothing was posted.")
         return {"status": "not_implemented", "detail": "Pinterest posting isn't built yet. Nothing was sent."}
 
-
 class PeerlistAdapter(PlatformAdapter):
     """
-    Session-persistent: uses a saved browser profile (like
-    generic_listing_agent.py's approach), so login only happens once
-    manually. Every subsequent call reuses the same profile folder and
-    stays logged in automatically.
+    Session-persistent. Login handled ONCE by setup_peerlist_login.py.
+    This just reuses the saved profile and posts to the Scroll feed composer.
     """
 
-    LOGIN_URL = "https://peerlist.io/login"
+    FEED_URL = "https://peerlist.io/scroll"
 
     def authenticate(self) -> bool:
-        creds = config.get_credentials()["peerlist"]
-        return bool(creds["username"] and creds["password"])
-
-    def _get_profile_dir(self):
+        # Only need the saved profile — creds are optional fallback
         from pathlib import Path
-        profile_dir = Path(config.BASE_DIR) / "sessions" / "peerlist_profile"
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        return profile_dir
+        profile = Path(config.BASE_DIR) / "sessions" / "peerlist_profile"
+        return profile.exists()
 
     def execute_post(self, target_url: str, content: str, is_ghost: bool = False) -> dict:
-        if not self.authenticate():
-            logger.warning("[Peerlist] Credentials missing (PEERLIST_USERNAME/PASSWORD in .env).")
-            return {"status": "failed", "detail": "No credentials configured - nothing was posted."}
+        from pathlib import Path
+        profile_dir = Path(config.BASE_DIR) / "sessions" / "peerlist_profile"
+
+        if not profile_dir.exists():
+            return {
+                "status": "failed",
+                "detail": "No saved session. Run 'python setup_peerlist_login.py' once first."
+            }
 
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
         except ImportError:
             return {"status": "failed", "detail": "Playwright not installed."}
-
-        creds = config.get_credentials()["peerlist"]
-        profile_dir = self._get_profile_dir()
 
         try:
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=str(profile_dir),
-                    headless=False,
+                    headless=False,   # keep visible; Peerlist detects headless
                     viewport={"width": 1366, "height": 768},
+                    user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/126.0.0.0 Safari/537.36"),
                 )
-                page = context.new_page()
-                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                page = context.pages[0] if context.pages else context.new_page()
 
-                # If the persisted session expired, we'll land on login - log in
-                # once here; next time the saved profile keeps us logged in.
+                # Always land on the Scroll feed (composer lives there)
+                page.goto(self.FEED_URL, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(3000)
+
                 if "login" in page.url.lower():
-                    logger.info("[Peerlist] Session expired or first run - logging in...")
-                    page.goto(self.LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-                    page.fill("input[type='email'], input[name='email']", creds["username"])
-                    page.fill("input[type='password'], input[name='password']", creds["password"])
-                    page.click("button[type='submit']")
-                    page.wait_for_timeout(4000)
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                    context.close()
+                    return {
+                        "status": "failed",
+                        "detail": "Session expired. Re-run 'python setup_peerlist_login.py'."
+                    }
 
-                # NOTE: Peerlist's comment/post box selector - update this
-                # line if Peerlist changes their page layout.
-                comment_box = page.locator(
-                    'textarea[placeholder*="comment" i], div[contenteditable="true"]'
-                ).first
-                comment_box.wait_for(state="visible", timeout=15000)
-                comment_box.click()
-                comment_box.type(content, delay=5)
+                # Step 1: click the "What are you working on?" trigger to open modal
+                trigger = page.get_by_placeholder("What are you working on?").first
+                try:
+                    trigger.wait_for(state="visible", timeout=10000)
+                    trigger.click()
+                except PWTimeout:
+                    # fallback: some layouts use a div, not an input
+                    page.locator('text="What are you working on?"').first.click()
 
-                submit_btn = page.get_by_role("button", name="Post").or_(
-                    page.get_by_role("button", name="Comment")
-                ).or_(page.locator('button[type="submit"]'))
-                submit_btn.first.click()
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(1500)
 
+                # Step 2: type into the modal's textarea (larger one)
+                # The modal shows the same placeholder inside a bigger textarea
+                composer = page.get_by_placeholder("What are you working on?").last
+                composer.wait_for(state="visible", timeout=10000)
+                composer.click()
+                composer.type(content, delay=15)
+
+                page.wait_for_timeout(1000)
+
+                # Step 3: click the green "Post" button in the modal header
+                post_btn = page.get_by_role("button", name="Post").first
+                post_btn.wait_for(state="visible", timeout=10000)
+
+                # Sanity: button becomes enabled only after text is entered
+                for _ in range(10):
+                    if post_btn.is_enabled():
+                        break
+                    page.wait_for_timeout(500)
+
+                post_btn.click()
+                page.wait_for_timeout(4000)
+
+                # Success signal: modal closes, URL stays on /scroll
                 context.close()
-                return {"status": "success", "detail": f"Posted to Peerlist: {target_url}"}
+                return {"status": "success", "detail": f"Posted to Peerlist Scroll feed."}
 
         except Exception as e:
             logger.error(f"[Peerlist] Posting failed: {e}")
             return {"status": "failed", "detail": f"Automation error: {e}"}
+
 class HashnodeAdapter(PlatformAdapter):
     """API-based, like Notion - publishes an article via Hashnode's GraphQL API."""
 
