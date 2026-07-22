@@ -1,5 +1,4 @@
 
-# src/gaper_scraper.py
 """
 Scrapes Gaper.io website for fresh content every time.
 This version scrapes the website ON DEMAND for dynamic content.
@@ -14,7 +13,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# Sections to scrape for fresh content
+
 GAPER_SECTIONS = [
     "https://gaper.io",
     "https://gaper.io/about",
@@ -120,19 +119,19 @@ def scrape_fresh_content() -> dict:
                 
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Get all headings (H1, H2, H3)
+           
             for tag in soup.find_all(['h1', 'h2', 'h3']):
                 text = tag.text.strip()
                 if text and len(text) > 10 and len(text) < 200:
                     results["headlines"].append(text)
             
-            # Get all paragraphs
+            
             for p in soup.find_all('p'):
                 text = p.text.strip()
                 if text and len(text) > 20 and len(text) < 500:
                     results["descriptions"].append(text)
             
-            # Find service/feature sections
+            
             for section in soup.find_all(['section', 'div'], class_=lambda c: c and any(x in c.lower() for x in ['service', 'feature', 'offer', 'benefit'])):
                 text = section.text.strip()
                 if text and len(text) > 30:
@@ -147,7 +146,7 @@ def scrape_fresh_content() -> dict:
         except Exception as e:
             logger.error(f"Failed to scrape {url}: {e}")
     
-    # If no data scraped, use defaults
+    
     if not results["descriptions"]:
         results["descriptions"] = config.BRAND_USPS
     
@@ -160,7 +159,7 @@ def get_fresh_content_for_post() -> dict:
     Scrapes website and picks random items.
     Called every time a new post is generated.
     """
-    # Scrape fresh content
+    
     scraped = scrape_fresh_content()
     
     # Randomly select items

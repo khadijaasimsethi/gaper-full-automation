@@ -1,7 +1,4 @@
 
-
-
-
 """
 Run this from your project root:
 

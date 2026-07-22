@@ -46,10 +46,7 @@ def check_overdue_backlinks(days: int = 7) -> dict:
 
     for backlink in due:
         if backlink.platform == "notion":
-            # Notion pages aren't public by default - archived/live status
-            # is already accurate via the API (see notion_backlink_manager.py),
-            # so just mark checked without a redundant fetch that would
-            # always fail on a private page.
+           
             update_backlink_health(backlink.id, "still_live")
             still_live += 1
             continue

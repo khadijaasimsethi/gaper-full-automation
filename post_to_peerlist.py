@@ -2,7 +2,7 @@ from src.adapters import get_adapter
 from post_to_contra import generate_post_content
 import config
 
-print("📝 Generating content...")
+print(" Generating content...")
 content = generate_post_content()
 print(f"\n📝 Content: {content}\n")
 

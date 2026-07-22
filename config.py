@@ -48,6 +48,10 @@ BRAND_USPS = [
     "Rigorous vetting covering technical skills, English proficiency, and soft skills."
 ]
 
+GAPER_FOUNDED_YEAR = "2019"
+GAPER_FOUNDER_NAME = "Mustafa Najoom"
+
+
 COMPETITORS = ["toptal", "turing", "upwork", "fiverr", "lemon.io", "remotebase", "optimizely", "andela"]
 
 # Platform Credentials Check helper
@@ -87,6 +91,9 @@ CAPTCHA_SERVICE = os.getenv("CAPTCHA_SERVICE", "2captcha")
 HASHNODE_API_KEY = os.getenv("HASHNODE_API_KEY", "")
 HASHNODE_PUBLICATION_ID = os.getenv("HASHNODE_PUBLICATION_ID", "")
 # Proxy List for rotation (to avoid IP bans)
+# config.py - ADD THESE
+
+# Proxy List for rotation
 PROXY_LIST = [
     # Add your proxies here in this format:
     # {
@@ -96,6 +103,9 @@ PROXY_LIST = [
     #     "password": "pass"
     # },
 ]
+
+# 2Captcha API Key
+CAPTCHA_API_KEY = os.getenv("CAPTCHA_API_KEY", "")
 
 # Platforms where Gaper is ALREADY listed (skip these)
 ALREADY_LISTED_PLATFORMS = [
@@ -139,3 +149,4 @@ CONTRA_FEED_URL = "https://contra.com/community/for-you?r=khadija_asim_t85rggyo"
 
 # Notion Database URL  
 NOTION_DATABASE_URL = os.getenv("NOTION_DATABASE_URL", "https://www.notion.so/khadijasethi/39b67494474d81c58d32fa649bf8aeb0")
+DEVTO_API_KEY = os.getenv("DEVTO_API_KEY", "SfhiD1WPqQh9ZnDfi5RWracB")

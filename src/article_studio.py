@@ -17,6 +17,7 @@ from src.gaper_scraper import get_brand_profile
 from src.adapters import get_adapter
 from src.notion_session_poster import post_to_notion_session
 from src.contra_poster import post_to_contra_feed
+from src.devto_poster import post_to_devto
 from src.waterfall import ingest_thread
 from src.ingestion import IngestionException
 import urllib.parse
@@ -25,17 +26,20 @@ import config
 logger = logging.getLogger(__name__)
 GEMINI_MODEL = "gemini-flash-latest"
 
-# Contra doesn't publish a dedicated public rules page we can reliably
-# scrape, so this is the sensible default used to seed the cache the
-# first time - real caching (Phase 3) still applies from then on: this
-# only gets fetched once per CACHE_TTL_DAYS window, not every draft.
+
 CONTRA_DEFAULT_GUIDELINES = (
     "Be genuinely helpful and on-topic. Light self-promotion is fine if it "
     "directly answers the thread, but no repeated posting of the same link, "
     "no unrelated pitches, no spammy phrasing."
 )
 
-
+DEVTO_GUIDELINES = (
+    "Write genuinely useful, technical or experience-based content for developers first. "
+    "No pure advertising or listicle-style spam. It's fine to mention your own product/company "
+    "if it's naturally relevant to the point being made, but the post must stand on its own "
+    "value even if that mention were removed. No plagiarized or purely AI-sounding filler content. "
+    "No excessive tags (max 4), no clickbait titles. Never use em dashes (—) or en dashes (–)."
+)
 def _get_or_cache_guidelines(domain: str, fallback: str) -> str:
     cached = get_cached_guidelines(domain)
     if cached:
@@ -69,9 +73,7 @@ Answer with ONLY one word: RELEVANT or IRRELEVANT.
 
 def _gemini():
     genai.configure(api_key=config.GEMINI_API_KEY)
-    # temperature raised from the default (~0.9 base but often feels flat
-    # on short prompts) so repeated topics don't converge on near-identical
-    # phrasing - this was the main cause of "same content every time".
+
     return genai.GenerativeModel(GEMINI_MODEL, generation_config={"temperature": 1.1, "top_p": 0.95})
 
 
@@ -90,10 +92,9 @@ def generate_draft(platform: str, topic: str = None, target_url: str = None) -> 
     if not config.GEMINI_API_KEY:
         return {"status": "failed", "detail": "GEMINI_API_KEY not set in .env."}
 
-    if platform not in ("contra", "notion"):
+    if platform not in ("contra", "notion","devto"):
         return {"status": "failed", "detail": f"Unknown platform '{platform}'."}
-    # target_url is optional for contra now: empty = standalone feed post
-    # (the "Share progress" composer), provided = reply to that thread.
+
 
     brand = get_brand_profile()
     usps = brand.get("usps", "")
@@ -116,7 +117,7 @@ Output ONLY the topic phrase, nothing else.
     try:
         if platform == "notion":
             prompt = f"""
-Write a full blog article (500-700 words) about: {topic}
+Write a full blog article (200-400 words) about: {topic}
 This is for Gaper (gaper.io), to be published as a public Notion blog page.
 
 Brand USPs:
@@ -139,8 +140,36 @@ Rules:
             body = "\n".join(lines[1:]).strip() if len(lines) > 1 else text
             draft_id = create_article_draft(platform="notion", topic=topic, content=body, title=title)
             return {"status": "success", "draft_id": draft_id, "title": title, "content": body}
+        elif platform == "devto":
+            prompt = f"""
+Write a blog article (350-500 words) about: {topic}
+This is for Gaper (gaper.io), to be published on Dev.to (a developer community site).
 
-        elif not target_url:  # contra, standalone feed post - no thread to read
+Dev.to's community guidelines (follow these strictly - Dev.to moderators actively remove content that violates them):
+{DEVTO_GUIDELINES}
+
+Brand USPs (mention Gaper only if it's naturally relevant to the point, not forced):
+{usps}
+Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
+{case_block}
+If you mention Gaper, link to it naturally once, as a bare clickable URL written exactly like this (no markdown, no brackets): {config.PRIMARY_URL}
+
+Rules:
+- Line 1: ONLY the plain title text. No links, no markdown, no brackets, under 70 characters.
+- Then a blank line, then the body, written for a developer audience (technical, specific, no fluff).
+- Use "## " for headings, "* " for bullets, "**text**" for bold, and fenced code blocks (```) if genuinely relevant.
+- NEVER use em dashes (—) or en dashes (–). Use a comma, period, or "and" instead.
+- Output ONLY the title + article, nothing else.
+"""
+            res = model.generate_content(prompt)
+            text = (res.text or "").strip()
+            lines = [l for l in text.split("\n") if l.strip()]
+            title = lines[0].strip() if lines else topic[:70]
+            body = "\n".join(lines[1:]).strip() if len(lines) > 1 else text
+            draft_id = create_article_draft(platform="devto", topic=topic, content=body, title=title)
+            return {"status": "success", "draft_id": draft_id, "title": title, "content": body}
+
+        elif not target_url:  
             prompt = f"""
 Write a short standalone community update post (2 sentences) for Gaper (gaper.io),
 to be posted in Contra's community feed under "Share progress, updates, or highlights".
@@ -164,9 +193,8 @@ Rules:
             draft_id = create_article_draft(platform="contra", topic=topic, content=content, target_url=None)
             return {"status": "success", "draft_id": draft_id, "content": content}
 
-        else:  # contra, reply to a specific thread
-            # Pull the REAL thread content - this is what makes each draft
-            # actually different, instead of just reacting to the topic text.
+        else:  
+           
             domain = urllib.parse.urlparse(target_url).netloc
             thread_content = ""
             thread_title = topic
@@ -238,7 +266,7 @@ Revise to address the feedback. Keep the same format as before (title+body for a
         res = model.generate_content(prompt)
         text = (res.text or "").strip()
 
-        if draft.platform == "notion":
+        if draft.platform == ("notion","devto"):
             lines = [l for l in text.split("\n") if l.strip()]
             new_title = lines[0].strip() if lines else draft.title
             new_body = "\n".join(lines[1:]).strip() if len(lines) > 1 else text
@@ -260,11 +288,8 @@ def submit_draft(draft_id: int) -> dict:
 
     if draft.platform == "contra":
         if draft.target_url:
-            # Reply to a specific thread. post_reply_to_contra() is pure
-            # browser automation - it never touches the DB - so the
-            # PostedBacklink row has to be created here, same pattern as
-            # the standalone feed post below. Without this, the reply
-            # goes live on Contra but never shows up in the dashboard.
+           
+            
             from src.contra_poster import post_reply_to_contra
             result = post_reply_to_contra(draft.target_url, draft.content)
             if result["status"] == "success":
@@ -307,14 +332,29 @@ def submit_draft(draft_id: int) -> dict:
     elif draft.platform == "notion":
         result = post_to_notion_session(draft.title or draft.topic, draft.content)
         if result["status"] == "success":
-            # Not truly "posted" yet - content is typed into the workspace
-            # but Publish to web is still a manual click. Draft sits in
-            # 'awaiting_confirm' until confirm_notion_publish() is called.
+       
             update_article_draft(draft_id, status="awaiting_confirm", detail=result.get("detail"))
         else:
             update_article_draft(draft_id, status="failed", detail=result.get("detail"))
         return result
-
+    elif draft.platform == "devto":
+        
+        result = post_to_devto(draft.title or draft.topic, draft.content, tags=["ai", "hiring", "startup"])
+        if result["status"] == "success":
+            update_article_draft(draft_id, status="posted", detail=result.get("detail"))
+            db = SessionLocal()
+            try:
+                db.add(PostedBacklink(
+                    platform="devto", target_url=result.get("posted_url", "https://dev.to"),
+                    content=f"{draft.title}\n\n{draft.content}", status="live",
+                    note="Published via Dev.to API.",
+                ))
+                db.commit()
+            finally:
+                db.close()
+        else:
+            update_article_draft(draft_id, status="failed", detail=result.get("detail"))
+        return result
     return {"status": "failed", "detail": f"Unknown platform '{draft.platform}'."}
 
 

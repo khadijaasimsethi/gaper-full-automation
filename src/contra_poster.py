@@ -1,5 +1,4 @@
 
-# src/contra_poster.py
 """
 Contra Poster - Uses the same working logic as root/post_to_contra.py
 Works for both feed and profile pages

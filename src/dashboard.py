@@ -11,7 +11,8 @@ from src.gaper_scraper import get_brand_profile, scrape_gaper_brand
 from src.discovery import discover_threads
 from src.pipeline import approve_and_queue_post, run_pipeline, run_global_discovery
 from src.brain import qa_loop, evaluate_seo_geo_aeo
-from src.generic_listing_agent import start_generic_listing, confirm_generic_listing, cancel_generic_listing
+# from src.generic_listing_agent import start_generic_listing, confirm_generic_listing, cancel_generic_listing
+from src.generic_listing_agent import start_generic_listing_async, confirm_generic_listing, cancel_generic_listing
 from src.notion_backlink_manager import edit_live_notion_page, delete_live_notion_page
 from src.backlink_health import check_overdue_backlinks
 import config
@@ -200,10 +201,11 @@ HTML_TEMPLATE = """
         </header>
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Overview</button>
-            <button class="tab-btn" onclick="switchTab('articles')">📝 Articles (Contra/Notion)</button>
+            <button class="tab-btn" onclick="switchTab('articles')">📝 Articles</button>
             <button class="tab-btn" onclick="switchTab('backlinks')">🔗 New Backlinks</button>
             <button class="tab-btn" onclick="switchTab('listings')">📋 Listing Pitcher</button>
             <button class="tab-btn" onclick="switchTab('discovery')">🔍 Logs & Discovery</button>
+                   <button class="tab-btn" onclick="switchTab('approvals')">🗳️ QA Approvals</button>
         </div>
 
         <div id="dashboard" class="panel active">
@@ -245,6 +247,7 @@ HTML_TEMPLATE = """
                     <select id="draftPlatform" onchange="toggleTargetUrlField()" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--glass-border);border-radius:8px;padding:12px;color:#fff;">
                         <option value="contra">Contra </option>
                         <option value="notion">Notion (standalone article)</option>
+                         <option value="devto">Dev.to (standalone article)</option>
                     </select>
                 </div>
                 <div class="form-group"><label>Topic</label><input type="text" id="draftTopic" placeholder="e.g. hiring remote developers fast"></div>
@@ -297,6 +300,13 @@ HTML_TEMPLATE = """
                 <div class="logs-window" id="logsWindow">[System Initialized]<br>[Waiting for actions...]</div>
             </div>
         </div>
+          <div id="approvals" class="panel">
+            <div class="glass-card">
+                <h2>🗳️ QA Approvals — Threads from Manual Pipeline / Discovery</h2>
+                <button class="btn btn-sm btn-accent" onclick="loadApprovals()">🔄 Refresh</button>
+                <div class="item-list" id="approvalsList" style="margin-top:15px;"></div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -309,6 +319,7 @@ HTML_TEMPLATE = """
             if (tabId === 'articles') loadDrafts();
             if (tabId === 'backlinks') loadBacklinks();
             if (tabId === 'listings') loadOpportunities();
+             if (tabId === 'approvals') loadApprovals();
         }
 
         function toggleTargetUrlField() {
@@ -862,10 +873,62 @@ def api_reject_draft(thread_id: int, feedback: RejectFeedback):
 #         }
 #     db.close()
 #     return result
+# @app.post("/api/list/{opp_id}")
+# def api_list_gaper(opp_id: int):
+#     """List Gaper on a specific platform using generic_listing_agent"""
+#     from src.generic_listing_agent import start_generic_listing
+#     from src.database import SessionLocal, ListingOpportunity
+    
+#     db = SessionLocal()
+#     opp = db.query(ListingOpportunity).filter(ListingOpportunity.id == opp_id).first()
+    
+#     if not opp:
+#         db.close()
+#         return {"status": "failed", "detail": "Platform not found"}
+    
+#     # ✅ FIX: opp.platform ki jagah opp.domain use karo
+#     platform_name = opp.domain or opp.url.split("/")[2]
+    
+#     result = start_generic_listing(
+#         url=opp.url,
+#         platform_name=platform_name,
+#         # use_proxy=True,
+#         # use_captcha=True
+#     )
+
+#     if result['status'] == 'awaiting_approval':
+#         opp.status = 'pending_listing'
+#         opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}\nStatus: Awaiting approval"
+#         opp_url = opp.url
+#         db.commit()
+#         db.close()
+#         return {
+#             "status": "success",
+#             "detail": f"Listing prepared for {opp_url}",
+#             "session_id": result['session_id'],
+#             "screenshot": result.get('screenshot_path')
+#         }
+    
+#     # if result['status'] == 'awaiting_approval':
+#     #     opp.status = 'pending_listing'
+#     #     opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}\nStatus: Awaiting approval"
+#     #     db.commit()
+#     #     db.close()
+#     #     return {
+#     #         "status": "success",
+#     #         "detail": f"Listing prepared for {opp.url}",
+#     #         "session_id": result['session_id'],
+#     #         "screenshot": result.get('screenshot_path')
+#     #     }
+#     else:
+#         db.close()
+#         return result
+
+
 @app.post("/api/list/{opp_id}")
-def api_list_gaper(opp_id: int):
+async def api_list_gaper(opp_id: int):
     """List Gaper on a specific platform using generic_listing_agent"""
-    from src.generic_listing_agent import start_generic_listing
+    from src.generic_listing_agent import start_generic_listing_async
     from src.database import SessionLocal, ListingOpportunity
     
     db = SessionLocal()
@@ -875,14 +938,11 @@ def api_list_gaper(opp_id: int):
         db.close()
         return {"status": "failed", "detail": "Platform not found"}
     
-    # ✅ FIX: opp.platform ki jagah opp.domain use karo
     platform_name = opp.domain or opp.url.split("/")[2]
     
-    result = start_generic_listing(
+    result = await start_generic_listing_async(
         url=opp.url,
         platform_name=platform_name,
-        # use_proxy=True,
-        # use_captcha=True
     )
 
     if result['status'] == 'awaiting_approval':
@@ -897,18 +957,6 @@ def api_list_gaper(opp_id: int):
             "session_id": result['session_id'],
             "screenshot": result.get('screenshot_path')
         }
-    
-    # if result['status'] == 'awaiting_approval':
-    #     opp.status = 'pending_listing'
-    #     opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}\nStatus: Awaiting approval"
-    #     db.commit()
-    #     db.close()
-    #     return {
-    #         "status": "success",
-    #         "detail": f"Listing prepared for {opp.url}",
-    #         "session_id": result['session_id'],
-    #         "screenshot": result.get('screenshot_path')
-    #     }
     else:
         db.close()
         return result
@@ -1134,3 +1182,6 @@ def api_delete_backlink(backlink_id: int):
             return {"status": "success", "detail": f"Local record marked deleted. {note}"}
     finally:
         db.close()
+
+
+
