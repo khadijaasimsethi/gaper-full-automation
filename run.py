@@ -1,5 +1,6 @@
 import argparse
 import sys
+import os
 import uvicorn
 from src.database import init_db
 from src.gaper_scraper import scrape_gaper_brand, get_brand_profile
@@ -64,7 +65,7 @@ def main():
         print("🔗 Open http://localhost:8000 in your browser to view the QA Panel")
         print("="*50 + "\n")
         
-        uvicorn.run("src.dashboard:app", host="localhost", port=8000, reload=False)
+        uvicorn.run("src.dashboard:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=False)
         return
         
     parser.print_help()

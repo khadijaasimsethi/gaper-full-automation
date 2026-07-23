@@ -9,7 +9,8 @@ from playwright.async_api import async_playwright
 import google.generativeai as genai
 from src.gaper_scraper import get_brand_profile
 import config
-
+import os
+IS_HEADLESS = os.environ.get("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
 logger = logging.getLogger(__name__)
 GEMINI_MODEL = "gemini-flash-latest"
 
@@ -239,7 +240,7 @@ async def _get_browser_context_async(platform_name: str):
 
     context = await p.chromium.launch_persistent_context(
         user_data_dir=str(profile_dir),
-        headless=False,
+        headless=IS_HEADLESS,
         viewport={"width": 1366, "height": 768},
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         proxy=proxy,

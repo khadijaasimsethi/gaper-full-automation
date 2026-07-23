@@ -179,7 +179,14 @@ Brand USPs:
 {usps}
 Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
 {case_block}
-Link to include naturally once: {config.PRIMARY_URL}
+IMPORTANT - LINK FORMAT:
+- Write the link on its OWN SEPARATE LINE
+- Format: https://gaper.io
+- DO NOT put it inside a sentence
+- Example:
+  [first sentence about progress]
+  https://gaper.io
+  [second sentence about impact]
 
 Rules:
 - Casual, first-person, builder-to-builder tone, like a real progress update - NOT a sales pitch.
@@ -266,7 +273,7 @@ Revise to address the feedback. Keep the same format as before (title+body for a
         res = model.generate_content(prompt)
         text = (res.text or "").strip()
 
-        if draft.platform == ("notion","devto"):
+        if draft.platform in ("notion","devto"):
             lines = [l for l in text.split("\n") if l.strip()]
             new_title = lines[0].strip() if lines else draft.title
             new_body = "\n".join(lines[1:]).strip() if len(lines) > 1 else text

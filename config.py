@@ -6,6 +6,18 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+IS_CLOUD_RUN = os.environ.get("K_SERVICE") is not None
+
+if IS_CLOUD_RUN:
+    # Cloud Run pe /tmp/sessions use karo
+    SESSION_DIR = Path("/tmp") / "sessions"
+else:
+    # Local pe sessions/ use karo
+    SESSION_DIR = Path(__file__).resolve().parent / "sessions"
+
+# Make sure folder exists
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "gaper_agent.db"))
 
