@@ -178,6 +178,10 @@ class Type4LlmVision(IngestionStrategy):
             """
 
             res = model.generate_content(prompt)
+
+            if not res.candidates or not res.candidates[0].content.parts:
+                raise IngestionException("Gemini returned no usable response (empty/blocked candidates).")
+
             import json
             import re
 
@@ -202,3 +206,56 @@ class Type4LlmVision(IngestionStrategy):
                 }
         except Exception as e:
             raise IngestionException(f"LLM Ingestion Strategy failed: {e}")
+
+
+class Type5ContraSession(IngestionStrategy):
+    """
+    Uses the SAME saved logged-in Contra Playwright profile that
+    contra_poster.py uses for posting. A real logged-in session is far
+    less likely to trigger Cloudflare's bot challenge than an anonymous
+    requests.get() or a fresh headless browser (Type2/Type3).
+    """
+    def fetch_thread_data(self, url: str) -> dict:
+        logger.info(f"[Type 5] Using saved Contra session for {url}")
+        from pathlib import Path
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+        import config as _config
+
+        profile_dir = Path(_config.BASE_DIR) / "sessions" / "contra_profile"
+        if not profile_dir.exists():
+            raise IngestionException("No saved Contra session found for Type 5 ingestion. Run setup_contra_login.py first.")
+
+        try:
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    headless=False,
+                    viewport={"width": 1366, "height": 768},
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                page = context.pages[0] if context.pages else context.new_page()
+
+                try:
+                    page.goto(url, wait_until="networkidle", timeout=30000)
+                except PWTimeout:
+                    pass
+
+                if "cloudflare" in page.content().lower():
+                    context.close()
+                    raise BlockedException("Cloudflare challenge page detected even with logged-in Contra session.")
+
+                title = page.title()
+                content = page.locator("body").inner_text()
+                context.close()
+
+                return {
+                    "title": title,
+                    "content": content[:1500],
+                    "comments_count": 0,
+                    "comments": [],
+                    "guidelines": "Always write authentic, valuable answers."
+                }
+        except BlockedException:
+            raise
+        except Exception as e:
+            raise DomParseException(f"Contra session scraping failed: {e}")

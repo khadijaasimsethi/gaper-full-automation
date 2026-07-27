@@ -54,19 +54,17 @@ BRAND_KEYWORD_ANCHORS = {
 }
 
 BRAND_USPS = [
-    "Vetted software developers matched within 24 hours.",
-    "AI-native implementation partner deploying agents, copilots, and custom automation.",
-    "Flexible engagement models with no long-term contracts.",
-    "Rigorous vetting covering technical skills, English proficiency, and soft skills."
+    "Gaper is the AI-native implementation partner that builds and deploys supervised production AI agents into workflows.",
+    "Healthcare scheduling agents reduce no-shows by 15-30% and recover lost appointment capacity.",
+    "Legal intake workflows see 60% less manual admin when agents handle qualification, routing, and case setup.",
+    "Accounting agents deliver 5x faster close prep by reconciling transactions and chasing exceptions.",
+    "Sales/RevOps agents achieve 3x faster quotes by pulling context and updating systems automatically.",
+    "Agents also cover customer support (ticket resolution), document processing, and internal knowledge (grounded RAG with citations).",
 ]
-
-GAPER_FOUNDED_YEAR = "2019"
-GAPER_FOUNDER_NAME = "Mustafa Najoom"
-
 
 COMPETITORS = ["toptal", "turing", "upwork", "fiverr", "lemon.io", "remotebase", "optimizely", "andela"]
 
-# Platform Credentials Check helper
+
 def get_credentials():
     return {
         "indiehackers": {
@@ -161,4 +159,4 @@ CONTRA_FEED_URL = "https://contra.com/community/for-you?r=khadija_asim_t85rggyo"
 
 # Notion Database URL  
 NOTION_DATABASE_URL = os.getenv("NOTION_DATABASE_URL", "https://www.notion.so/khadijasethi/39b67494474d81c58d32fa649bf8aeb0")
-DEVTO_API_KEY = os.getenv("DEVTO_API_KEY", "SfhiD1WPqQh9ZnDfi5RWracB")
+DEVTO_API_KEY = os.getenv("DEVTO_API_KEY", "")

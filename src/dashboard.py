@@ -224,8 +224,8 @@ HTML_TEMPLATE = """
                         <h2>System Stats</h2>
                         <div class="scores-wrapper">
                             <div class="score-circle"><div class="score-val" id="statPending">0</div><div class="score-label">Pending Approval</div></div>
-                            <div class="score-circle"><div class="score-val" id="statPosted">0</div><div class="score-label">Citations Posted</div></div>
-                            <div class="score-circle"><div class="score-val" id="statOpps">0</div><div class="score-label">Directories Missing</div></div>
+                           
+                            <div class="score-circle"><div class="score-val" id="statOpps">0</div><div class="score-label">Directories</div></div>
                             <div class="score-circle"><div class="score-val" id="statListed">0</div><div class="score-label">Gaper Listed</div></div>
                             <div class="score-circle"><div class="score-val" id="statBacklinks">0</div><div class="score-label">Live Backlinks</div></div>
                         </div>
@@ -469,7 +469,7 @@ HTML_TEMPLATE = """
                 const opps = await (await fetch('/api/opportunities')).json();
                 const backlinks = await (await fetch('/api/backlinks')).json();
                 document.getElementById('statPending').innerText = threads.filter(t => t.status === 'pending_approval').length;
-                document.getElementById('statPosted').innerText = threads.filter(t => t.status === 'posted').length;
+               
                 document.getElementById('statOpps').innerText = opps.filter(o => o.status === 'discovered' || o.status === 'pending_listing').length;
                 document.getElementById('statListed').innerText = opps.filter(o => o.status === 'listed').length;
                 document.getElementById('statBacklinks').innerText = backlinks.filter(b => b.status !== 'deleted').length;

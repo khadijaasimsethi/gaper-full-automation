@@ -9,3 +9,6 @@ venv/
 dist/
 build/
 *.egg-info
+turso.db-shm
+turso.db-wal
+turso.db-info

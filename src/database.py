@@ -3,6 +3,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import config
+import os
 
 Base = declarative_base()
 
@@ -124,8 +125,19 @@ class CaseStudy(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
-# Database Engine and Sessions setup
-engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, connect_args={"check_same_thread": False})
+# --- Database Engine and Sessions setup (Turso + SQLite fallback shim) ---
+turso_url = os.environ.get("TURSO_DATABASE_URL")
+turso_token = os.environ.get("TURSO_AUTH_TOKEN")
+
+if turso_url and turso_token:
+    engine = create_engine(
+        f"sqlite+{turso_url}?secure=true",
+        connect_args={"auth_token": turso_token},
+        echo=False,
+    )
+else:
+    engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, connect_args={"check_same_thread": False})
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
@@ -400,7 +412,16 @@ def get_backlinks_due_for_check(days: int = 7) -> list:
         return due
     finally:
         db.close()
-
+def get_recent_posted_content(platform: str, limit: int = 5) -> list[str]:
+    db = SessionLocal()
+    try:
+        rows = (db.query(PostedBacklink)
+                .filter(PostedBacklink.platform == platform)
+                .order_by(PostedBacklink.created_at.desc())
+                .limit(limit).all())
+        return [r.content[:100] for r in rows]
+    finally:
+        db.close()
 
 def update_backlink_health(backlink_id: int, link_status: str):
     db = SessionLocal()

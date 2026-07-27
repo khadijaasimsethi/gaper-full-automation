@@ -11,7 +11,7 @@ import google.generativeai as genai
 from src.database import (
     create_article_draft, get_article_draft, update_article_draft,
     delete_article_draft, retrieve_relevant_case_studies, PostedBacklink, SessionLocal,
-    get_cached_guidelines, set_cached_guidelines
+    get_cached_guidelines, set_cached_guidelines, get_recent_posted_content
 )
 from src.gaper_scraper import get_brand_profile
 from src.adapters import get_adapter
@@ -61,7 +61,7 @@ def _check_relevance(topic: str, content_context: str) -> dict:
 Topic: {topic}
 Context: {content_context[:800]}
 
-Is this genuinely relevant to Gaper (an AI-native developer staffing / implementation platform)?
+Is this genuinely relevant to Gaper (an AI-native implementation partner that builds and deploys production AI agents)?
 Answer with ONLY one word: RELEVANT or IRRELEVANT.
 """
         res = model.generate_content(prompt)
@@ -102,15 +102,39 @@ def generate_draft(platform: str, topic: str = None, target_url: str = None) -> 
 
     if not topic or not topic.strip():
         try:
+            import random
+            angles = [
+                "a contrarian take that challenges common belief",
+                "a practical how-to / checklist angle",
+                "a specific before-and-after result or case study angle",
+                "a question the reader is likely asking themselves",
+                "a comparison between two approaches (e.g. build vs buy, DIY vs partner)",
+                "a myth-busting angle about a common misconception",
+            ]
+            chosen_angle = random.choice(angles)
+
+            recent = get_recent_posted_content(platform, limit=8)
+            brand_description = brand.get("description", "")
             topic_prompt = f"""
 Suggest ONE specific, non-generic topic (under 12 words) for a Gaper (gaper.io) {platform} post.
+
+Core identity (this is what Gaper IS - stay grounded in this): {brand_description}
 Brand USPs: {usps}
+Write it from this angle: {chosen_angle}
+The topic must be substantively DIFFERENT in subject matter (not just reworded) from these recent topics: {recent}
+
+IMPORTANT:
+- Only reference workflows/domains actually supported by the USPs above (e.g. missed appointments, intake admin, close work, quotes, support handoffs). Do NOT invent a new industry, workflow, or use case not grounded in the USPs or core identity.
+- Do NOT frame this as a developer staffing, hiring, or engineering-recruitment topic. Gaper's current focus is building and deploying AI agents into business workflows, not staffing engineers.
+- Do NOT use CI/CD, GitHub, DevOps, Terraform, or code-infrastructure examples unless they are explicitly listed in the USPs above.
+
 Output ONLY the topic phrase, nothing else.
 """
             topic_res = model.generate_content(topic_prompt)
-            topic = (topic_res.text or "").strip().strip('"') or "hiring remote developers fast"
+            topic = (topic_res.text or "").strip().strip('"') or "how AI agents cut manual workflow admin"
         except Exception:
-            topic = "hiring remote developers fast"
+            topic = "how AI agents cut manual workflow admin"
+
 
     case_block = _case_study_block(topic)
 
@@ -142,7 +166,7 @@ Rules:
             return {"status": "success", "draft_id": draft_id, "title": title, "content": body}
         elif platform == "devto":
             prompt = f"""
-Write a blog article (350-500 words) about: {topic}
+Write a blog article (550-700 words) about: {topic}
 This is for Gaper (gaper.io), to be published on Dev.to (a developer community site).
 
 Dev.to's community guidelines (follow these strictly - Dev.to moderators actively remove content that violates them):
@@ -150,9 +174,11 @@ Dev.to's community guidelines (follow these strictly - Dev.to moderators activel
 
 Brand USPs (mention Gaper only if it's naturally relevant to the point, not forced):
 {usps}
-Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
+Relevant case studies/facts you MAY cite naturally if they genuinely fit (NEVER invent numbers, percentages, or stats - only use the ones explicitly given above):
 {case_block}
 If you mention Gaper, link to it naturally once, as a bare clickable URL written exactly like this (no markdown, no brackets): {config.PRIMARY_URL}
+Gaper builds and deploys AI agents into client workflows - it does NOT frame itself as a developer staffing, hiring, or recruitment company. NEVER write phrases like "hire developers" or "hire engineers".
+Beyond these 2 rules, feel free to be creative: use your own technical examples, structure, tone, and angle - just keep the facts (numbers, positioning) accurate to what's given above.
 
 Rules:
 - Line 1: ONLY the plain title text. No links, no markdown, no brackets, under 70 characters.
@@ -230,7 +256,13 @@ Brand USPs:
 {usps}
 Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
 {case_block}
-{"Do NOT include any link or mention Gaper by name - this community forbids promotional links." if is_ghost else f"Link to include naturally once, as a bare clickable URL written exactly like this (no markdown, no brackets): {config.PRIMARY_URL}"}
+{"Do NOT include any link or mention Gaper by name - this community forbids promotional links." if is_ghost else f'''IMPORTANT - LINK FORMAT:
+- Write the link on its OWN SEPARATE LINE
+- Format: {config.PRIMARY_URL}
+- DO NOT put it inside a sentence or glue it next to punctuation like a comma
+- Example:
+  [your comment text]
+  {config.PRIMARY_URL}'''}
 
 Rules:
 - React specifically to what the thread actually says - don't write a generic pitch.

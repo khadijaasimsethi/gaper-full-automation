@@ -7,6 +7,7 @@ from src.ingestion import (
     Type2StaticSoup,
     Type3PlaywrightAuth,
     Type4LlmVision,
+
     BlockedException,
     DomParseException,
     IngestionException
@@ -19,7 +20,8 @@ STRATEGIES = {
     "Type1ApiRss": Type1ApiRss(),
     "Type2StaticSoup": Type2StaticSoup(),
     "Type3PlaywrightAuth": Type3PlaywrightAuth(),
-    "Type4LlmVision": Type4LlmVision()
+    "Type4LlmVision": Type4LlmVision(),
+    
 }
 
 
@@ -51,7 +53,7 @@ def ingest_thread(url: str) -> dict:
     escalation_list = []
     if "dev.to" in url or "feed" in url:
         escalation_list.append("Type1ApiRss")
-    escalation_list.extend(config.ESCALATION_ORDER)
+   
 
     seen = set()
     escalation_order = [x for x in escalation_list if not (x in seen or seen.add(x))]
