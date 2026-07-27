@@ -1,86 +1,118 @@
-# Gaper AI Backlink & Citation Assembly Line (V2)
+# Gaper Backlink Agent V2
 
-An automated, highly-optimized AI Agent pipeline specifically designed for **Gaper** (gaper.io) to acquire backlinks and brand citations that satisfy **Search Engine Optimization (SEO)**, **Generative Engine Optimization (GEO)**, and **Answer Engine Optimization (AEO)** requirements.
+An AI-powered automation system that discovers relevant platforms and conversations, generates contextual content with Gemini, and (after human approval) publishes backlinks and citations for Gaper — built for SEO, GEO (Generative Engine Optimization), and AEO (Answer Engine Optimization).
 
-The architecture is built as a modular **7-block AI Assembly Line** using the Strategy and Factory design patterns.
+**Live deployment:** `https://khadija-gaper-api-509682134216.us-central1.run.app`
 
 ---
 
-## 🚀 The 7-Block Architecture
+## What It Does
+
+Instead of manually searching for backlink opportunities and writing outreach content, this system:
+
+1. **Discovers** relevant threads, communities, and listing directories where Gaper can be mentioned
+2. **Reads** the target page content using a layered fallback strategy (API/RSS → static scraping → authenticated browser → LLM vision), since many sites block simple scrapers
+3. **Generates** a contextual reply or article with Gemini, grounded in Gaper's actual case studies and USPs (lightweight RAG)
+4. **Waits for human review** — every draft is approved, edited, or discarded on the dashboard before anything goes live
+5. **Publishes** using saved login sessions, once approved
+6. **Monitors** posted backlinks, re-checking after 7 days to confirm they're still live
+
+---
+
+## Dashboard Tabs
+
+| Tab | Purpose |
+|---|---|
+| **Overview** | Brand profile + system stats |
+| **Articles** | Generate → edit → improve → submit flow for Contra/Notion/Dev.to |
+| **New Backlinks** | Everything actually posted live; edit/delete where the platform API allows it |
+| **Listing Pitcher** | Directory listings where Gaper is missing — auto-fill and submit |
+| **Logs & Discovery** | Run discovery jobs, view live system logs |
+| **QA Approvals** | Legacy thread-reply approval queue |
+
+---
+
+## Tech Stack
+
+- **Backend:** Python 3.10, FastAPI, Uvicorn
+- **Scraping/Automation:** Playwright, BeautifulSoup, lxml
+- **AI:** Google Gemini API
+- **Database:** SQLAlchemy ORM — SQLite locally, migrating to Turso db for persistent cloud storage
+- **Background jobs (optional):** Celery + Redis (currently disabled via `USE_CELERY=False`)
+- **Deployment:** Docker on Google Cloud Run (serverless, scale-to-zero)
+
+---
+
+## Supported Platforms
+
+**Active:** Contra, Notion, Dev.to
+**Configured but inactive:** IndieHackers, Peerlist, Substack, Hashnode
+
+---
+
+## Local Setup
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+playwright install chromium
+
+# Copy .env.example to .env and fill in your keys
+python run.py --dashboard
+```
+Dashboard runs at `http://localhost:8000`.
+
+### Required environment variables
+```
+GEMINI_API_KEY=
+SERPER_API_KEY=
+CAPTCHA_API_KEY=
+CONTRA_EMAIL=
+NOTION_API_KEY=
+NOTION_DATABASE_URL=
+DEVTO_API_KEY=
+```
+
+---
+
+## Cloud Deployment (Google Cloud Run)
+
+Deployed as a minimal, cost-conscious serverless service — no VMs, no Kubernetes.
+
+```bash
+gcloud run deploy khadija-gaper-api \
+  --source . \
+  --region us-central1 \
+  --min-instances 0 \
+  --memory 2Gi \
+  --timeout 600 \
+  --allow-unauthenticated \
+  --set-env-vars="GEMINI_API_KEY=...,SERPER_API_KEY=...,CAPTCHA_API_KEY=...,CONTRA_EMAIL=...,NOTION_API_KEY=...,NOTION_DATABASE_URL=...,DEVTO_API_KEY=..."
+```
+
+**Config notes:**
+- `min-instances 0` → $0 cost while idle
+- `memory 2Gi` → required for Playwright's Chromium; 512Mi causes silent startup failures
+- `timeout 600` → scraping + Gemini calls can take 2–3 minutes per request
+- Base image: `mcr.microsoft.com/playwright/python:v1.42.0-jammy` (avoids OS package mismatches from installing Playwright deps manually)
+
+---
+
+## Known Limitations / In Progress
+
+- **Persistent storage:** SQLite resets on every container restart on Cloud Run (stateless). Migration to Supabase Postgres is in progress so data survives redeploys and scale-to-zero cycles.
+- **Session freshness:** Login sessions (Contra, Notion, etc.) are baked into the Docker image at build time. If a session expires, it must be regenerated locally (`setup_<platform>_login.py`) and redeployed.
+- **Legacy pipeline:** `ThreadMemory`/QA Approvals is an earlier version of the workflow, superseded by the Articles tab (`ArticleDraft` → `PostedBacklink`). "Citations Posted" stat reflects only the legacy pipeline and will show 0 under normal use.
+- **CI/CD automation:** Currently deployed manually via `gcloud run deploy`. GitHub Actions workflow for automatic deploy-on-push is drafted but not yet wired up with Workload Identity Federation.
+
+---
+
+## Architecture
 
 ```
-                       [ 1. Discovery (SERP/RSS) ]
-                                    │
-                       [ 2. Memory (SQLite DB) ]
-                                    │
-                  [ 3 & 4. Ingestion & Waterfall ]
-                     (Soup ➔ Playwright ➔ Gemini)
-                                    │
-                      [ 5. Brain (Gemini & QA) ]
-                                    │
-                    [ 6. Adapters (Platform Factory) ]
-                (IndieHackers/Contra/Peerlist/Outreach)
-                                    │
-                      [ 7. Pipeline (Broker Queue) ]
-```
-
-1. **The Front Door (Discovery & Filtering):** Combines RSS feeds and Google SERP dorks, deduplicates URLs, and filters past runs using SQLite memory.
-2. **System Memory (Database & Caching):** SQLite zero-config engine. Keeps track of comment counts (so we only re-process if there are new comments) and caches guidelines (30-day TTL).
-3. **Ingestion Strategies:** strategy pattern implementing:
-   - `Type1ApiRss` (Fast direct JSON parsing)
-   - `Type2StaticSoup` (Requests/BS4 fallback)
-   - `Type3PlaywrightAuth` (Headless browser automation)
-   - `Type4LlmVision` (Multimodal LLM fallback to parse messy page outputs)
-4. **Waterfall Escalation:** Escalates through ingestion types on failure (Type 2 ➔ 3 ➔ 4) and saves the successful type by domain to optimize future runs.
-5. **AI Brain & QA Loop:** Uses Gemini to craft structured replies. Automatically shifts to **Ghost Mode** (no promotion link) if community rules forbid it. Includes a 3-iteration human-feedback QA Loop.
-6. **Execution Adapters:** Factory pattern supplying handlers for **IndieHackers**, **Contra**, **Notion**, **Substack**, **Pinterest**, and **Peerlist**. Also handles SMTP email **Outreach** pitches for directories missing Gaper.
-7. **Pipeline Tasks:** Rate-limits posts (max 10/min) using Celery or a thread-based local broker queue. Bypasses 7-day tracking verification for Ghost Posts.
-
----
-
-## 🛠️ Setup & Installation
-
-1. **Create Environment Configuration:**
-   Copy `.env.example` to `.env` and fill in your Gemini API Key and platform credentials.
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Install Dependencies:**
-   Ensure you have Python 3.9+ installed, then run:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Install Browser Binaries (for Playwright):**
-   ```bash
-   playwright install chromium
-   ```
-
----
-
-## 💻 How to Run
-
-- **Launch Interactive Web Dashboard (Highly Recommended):**
-  Open the QA Panel to review drafts, approve postings, and view directory outreach lists.
-  ```bash
-  python run.py --dashboard
-  ```
-  Then open `http://localhost:8000` in your web browser.
-
-- **Trigger Discovery:**
-  Runs search engine scraping and RSS parsers to fetch target threads.
-  ```bash
-  python run.py --discover
-  ```
-
-- **Update Brand Profile:**
-  Connects to Gaper.io and updates description and logo details.
-  ```bash
-  python run.py --scrape-brand
-  ```
-
-- **Process a Single URL via CLI:**
-  ```bash
-  python run.py --process "https://www.indiehackers.com/post/best-platforms-to-hire-developers-for-startups-3f982d"
-  ```
+GitHub → GitHub Actions (planned) → Docker build → Artifact Registry
+                                                          ↓
+                                                     Cloud Run service
+                                                    ↙            ↘
+                                          Secret Manager      TURSO(planned)
