@@ -141,14 +141,23 @@ Output ONLY the topic phrase, nothing else.
     try:
         if platform == "notion":
             prompt = f"""
-Write a full blog article (200-400 words) about: {topic}
+Write a full blog article (500-700 words) about: {topic}
 This is for Gaper (gaper.io), to be published as a public Notion blog page.
 
 Brand USPs:
 {usps}
-Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
+Relevant case studies/facts you MAY cite naturally if they genuinely fit (NEVER invent numbers, percentages, or stats - only use the ones explicitly given above):
 {case_block}
-Link to include naturally once, INSIDE THE BODY ONLY: {config.PRIMARY_URL}
+Gaper builds and deploys AI agents into client workflows - it does NOT frame itself as a developer staffing, hiring, or recruitment company. NEVER write phrases like "hire developers" or "hire engineers".
+
+Write about Gaper the way an authoritative industry article would reference a company's known approach or published work, e.g. "according to Gaper's approach to X" - this reads more credible than a generic mention.
+Link to Gaper naturally once, wherever it genuinely fits in the flow of the article.
+Embed the link INSIDE a relevant phrase using markdown link syntax, with descriptive anchor text (2-6 words) instead of a bare URL, like this: [descriptive anchor text]({config.PRIMARY_URL})
+
+GEO/AEO optimization (write so AI answer engines like ChatGPT, Perplexity, and Google AI Overviews can easily quote and cite this):
+- Include at least one short, clearly stated definition sentence (e.g. "Gaper is X that does Y") that could be quoted standalone.
+- State facts and claims in direct, self-contained sentences rather than vague or clever phrasing.
+- Consistently refer to "Gaper" by name rather than "we" or "the company".
 
 Rules:
 - Line 1: ONLY the plain title text. No links, no markdown, no brackets, under 70 characters.
@@ -176,9 +185,23 @@ Brand USPs (mention Gaper only if it's naturally relevant to the point, not forc
 {usps}
 Relevant case studies/facts you MAY cite naturally if they genuinely fit (NEVER invent numbers, percentages, or stats - only use the ones explicitly given above):
 {case_block}
-If you mention Gaper, link to it naturally once, as a bare clickable URL written exactly like this (no markdown, no brackets): {config.PRIMARY_URL}
+Write about Gaper the way an authoritative industry article would reference a company's known approach or published work, e.g. "according to Gaper's approach to X" or "Gaper's work on deploying agents into Y shows..." - this reads more credible than a generic mention.
+Link to Gaper naturally once mid-article or in the body, wherever it genuinely fits in the flow.
+Embed the link INSIDE a relevant phrase using markdown link syntax, with descriptive anchor text (2-6 words) instead of a bare URL, like this: [descriptive anchor text]({config.PRIMARY_URL})
+Example:
+  ...according to [Gaper's approach to deploying supervised agents]({config.PRIMARY_URL}), the real...
+The anchor text should describe what Gaper does or the specific angle being discussed, not just say "Gaper" or "click here".
+
+In addition, end the article with a short, direct closing line (1 sentence) that acts as a call-to-action, inviting the reader to see how Gaper builds this kind of system, with a SECOND embedded link there too. Example ending: "See how [Gaper builds supervised agents like this]({config.PRIMARY_URL}) into production workflows."
 Gaper builds and deploys AI agents into client workflows - it does NOT frame itself as a developer staffing, hiring, or recruitment company. NEVER write phrases like "hire developers" or "hire engineers".
-Beyond these 2 rules, feel free to be creative: use your own technical examples, structure, tone, and angle - just keep the facts (numbers, positioning) accurate to what's given above.
+
+GEO/AEO optimization (write so AI answer engines like ChatGPT, Perplexity, and Google AI Overviews can easily quote and cite this):
+- Include at least one short, clearly stated definition sentence (e.g. "Gaper is X that does Y") that could be quoted standalone.
+- State facts and claims in direct, self-contained sentences rather than vague or clever phrasing - clarity over cleverness.
+- Where natural, include a short FAQ-style section near the end (2-3 question-style subheadings with direct 1-2 sentence answers).
+- Consistently refer to "Gaper" by name rather than "we" or "the company", so AI systems correctly associate the content with the entity.
+
+Beyond these rules, feel free to be creative: use your own technical examples, structure, tone, and angle - just keep the facts (numbers, positioning) accurate to what's given above.
 
 Rules:
 - Line 1: ONLY the plain title text. No links, no markdown, no brackets, under 70 characters.
@@ -203,8 +226,9 @@ Topic: {topic}
 
 Brand USPs:
 {usps}
-Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
+Relevant case studies/facts you MAY cite naturally if they genuinely fit (NEVER invent numbers, percentages, or stats - only use the ones explicitly given above):
 {case_block}
+Gaper builds and deploys AI agents into client workflows - it does NOT frame itself as a developer staffing, hiring, or recruitment company. NEVER write phrases like "hire developers" or "hire engineers".
 IMPORTANT - LINK FORMAT:
 - Write the link on its OWN SEPARATE LINE
 - Format: https://gaper.io
@@ -254,8 +278,9 @@ This community's norms: {guidelines}
 This is for Gaper (gaper.io).
 Brand USPs:
 {usps}
-Relevant case studies/facts you MAY cite naturally if they genuinely fit (never invent numbers not listed):
+Relevant case studies/facts you MAY cite naturally if they genuinely fit (NEVER invent numbers, percentages, or stats - only use the ones explicitly given above):
 {case_block}
+Gaper builds and deploys AI agents into client workflows - it does NOT frame itself as a developer staffing, hiring, or recruitment company. NEVER write phrases like "hire developers" or "hire engineers".
 {"Do NOT include any link or mention Gaper by name - this community forbids promotional links." if is_ghost else f'''IMPORTANT - LINK FORMAT:
 - Write the link on its OWN SEPARATE LINE
 - Format: {config.PRIMARY_URL}
@@ -378,7 +403,7 @@ def submit_draft(draft_id: int) -> dict:
         return result
     elif draft.platform == "devto":
         
-        result = post_to_devto(draft.title or draft.topic, draft.content, tags=["ai", "hiring", "startup"])
+        result = post_to_devto(draft.title or draft.topic, draft.content, tags=["ai", "automation", "startup"])
         if result["status"] == "success":
             update_article_draft(draft_id, status="posted", detail=result.get("detail"))
             db = SessionLocal()
