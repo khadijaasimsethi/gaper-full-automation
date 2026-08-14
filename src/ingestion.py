@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 import logging
 import requests
@@ -179,13 +178,26 @@ class Type4LlmVision(IngestionStrategy):
 
             res = model.generate_content(prompt)
 
-            if not res.candidates or not res.candidates[0].content.parts:
-                raise IngestionException("Gemini returned no usable response (empty/blocked candidates).")
+            # FIX: previously this only checked res.candidates[0].content.parts
+            # in one combined condition, then immediately called res.text below -
+            # but res.text INTERNALLY does the same candidates[0].content.parts[0]
+            # access, and if Gemini's safety filters blocked the response, that
+            # access could still raise IndexError ("list index out of range")
+            # even after the check above passed. Splitting the checks and
+            # wrapping res.text in its own try/except closes that gap.
+            if not res.candidates:
+                raise IngestionException("Gemini returned no candidates (likely blocked by safety filters).")
+            if not res.candidates[0].content.parts:
+                raise IngestionException("Gemini returned empty content (likely blocked/filtered).")
+
+            try:
+                text = res.text
+            except (IndexError, ValueError) as e:
+                raise IngestionException(f"Gemini response had no readable text: {e}")
 
             import json
             import re
 
-            text = res.text
             match = re.search(r'\{.*\}', text, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
@@ -204,6 +216,8 @@ class Type4LlmVision(IngestionStrategy):
                     "comments": [],
                     "guidelines": ""
                 }
+        except IngestionException:
+            raise
         except Exception as e:
             raise IngestionException(f"LLM Ingestion Strategy failed: {e}")
 

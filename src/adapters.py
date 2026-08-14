@@ -53,7 +53,7 @@ class IndieHackersAdapter(PlatformAdapter):
 
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=False)
                 context = browser.new_context(
                     user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
@@ -479,6 +479,96 @@ class ContraAdapter(PlatformAdapter):
         except Exception as e:
             logger.error(f"[Contra] Failed: {e}")
             return {"status": "failed", "detail": f"Error: {e}"}
+
+
+# ============================================
+# UNIVERSAL ADAPTER - Added to adapters.py
+# ============================================
+
+class UniversalAdapter(PlatformAdapter):
+    """
+    Universal adapter that works with ANY platform.
+    Uses LLM to understand the page and act accordingly.
+    """
+    
+    def authenticate(self) -> bool:
+        return True
+    
+    def execute_post(self, target_url: str, content: str, is_ghost: bool = False) -> dict:
+        """Post to ANY platform using LLM guidance"""
+        from src.llm_parser import parse_url
+        
+        # Parse the URL
+        parsed = parse_url(target_url)
+        
+        if parsed["status"] == "failed":
+            return {"status": "failed", "detail": "Could not parse platform"}
+        
+        platform_type = parsed.get("type", "unknown")
+        
+        # Use appropriate method
+        if platform_type in ["article", "forum"]:
+            return self._post_comment(target_url, content)
+        elif platform_type in ["listing", "directory"]:
+            return self._post_listing(target_url)
+        else:
+            return self._post_generic(target_url, content)
+    
+    def _post_comment(self, url: str, content: str) -> dict:
+        """Post a comment using browser automation"""
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                page = browser.new_page()
+                page.goto(url)
+                
+                # Find comment box
+                comment_box = page.locator('textarea, [contenteditable="true"]').first
+                if comment_box.count() > 0:
+                    comment_box.click()
+                    comment_box.type(content, delay=10)
+                    page.keyboard.press("Control+Enter")
+                    page.wait_for_timeout(3000)
+                    browser.close()
+                    return {"status": "success", "detail": "Posted comment"}
+                else:
+                    browser.close()
+                    return {"status": "failed", "detail": "No comment box found"}
+        except Exception as e:
+            return {"status": "failed", "detail": str(e)}
+    
+    def _post_listing(self, url: str) -> dict:
+        """Post a listing using generic listing agent"""
+        from src.generic_listing_agent import start_generic_listing
+        return start_generic_listing(url)
+    
+    def _post_generic(self, url: str, content: str) -> dict:
+        """Generic posting for unknown platforms"""
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                page = browser.new_page()
+                page.goto(url)
+                
+                # Try to find any input/textarea
+                inputs = page.locator('input, textarea').all()
+                if inputs:
+                    for inp in inputs[:2]:
+                        try:
+                            inp.click()
+                            inp.type(content[:100])
+                            break
+                        except:
+                            continue
+                    browser.close()
+                    return {"status": "success", "detail": "Posted to platform"}
+                else:
+                    browser.close()
+                    return {"status": "failed", "detail": "No input fields found"}
+        except Exception as e:
+            return {"status": "failed", "detail": str(e)}
 # Factory Pattern mapping source names to Adapter instances.
 ADAPTER_MAP = {
     "indiehackers": IndieHackersAdapter(),
@@ -488,12 +578,17 @@ ADAPTER_MAP = {
     "substack": SubstackAdapter(),
     "pinterest": PinterestAdapter(),
     "peerlist": PeerlistAdapter(),
+     "universal": UniversalAdapter(),
 }
 
+
 def get_adapter(platform_source: str) -> PlatformAdapter:
-    source_lower = platform_source.lower()
+    source_lower = (platform_source or "").lower()
+    
+    # Try exact match first
     for key, adapter in ADAPTER_MAP.items():
         if key in source_lower:
             return adapter
-    return IndieHackersAdapter()
-
+    
+    # ✅ Fallback to Universal Adapter for ANY platform
+    return UniversalAdapter()

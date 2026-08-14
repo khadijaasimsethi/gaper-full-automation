@@ -9,7 +9,7 @@ from src.waterfall import ingest_thread
 from src.brain import draft_reply, evaluate_seo_geo_aeo
 from src.adapters import get_adapter
 import config
-
+import urllib.parse  
 logger = logging.getLogger(__name__)
 
 # Celery Setup (Block 7)
@@ -117,6 +117,11 @@ def execute_post_task(thread_id: int):
         db.commit()
     except Exception as e:
         logger.error(f"Error in execute_post_task: {e}")
+        try:
+            thread.status = 'failed'
+            db.commit()
+        except Exception:
+            pass
     finally:
         db.close()
 
@@ -144,7 +149,8 @@ def run_pipeline(url: str) -> dict:
         thread_data = ingest_thread(url)
 
         if not thread:
-            thread = ThreadMemory(url=url, platform=thread_data.get("title", ""))
+            domain = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
+            thread = ThreadMemory(url=url, platform=domain)
             db.add(thread)
 
         thread.scraped_content = thread_data.get("content", "")
@@ -180,25 +186,29 @@ def run_pipeline(url: str) -> dict:
 
 def approve_and_queue_post(thread_id: int):
     """
-    Called ONLY when a human has explicitly approved a draft (CLI 'y' or
-    dashboard approve button). Queues the execution task using the active
-    broker.
+    Runs the post synchronously now, so the caller gets the REAL result
+    (success/failed) instead of a fire-and-forget queue confirmation.
     """
     db = SessionLocal()
     try:
         thread = db.query(ThreadMemory).filter(ThreadMemory.id == thread_id).first()
         if not thread:
-            return
-
+            return {"status": "failed", "detail": f"Thread {thread_id} not found"}
         thread.status = 'approved'
         db.commit()
+    finally:
+        db.close()
 
-        if config.USE_CELERY and celery_app:
-            celery_post_task.delay(thread_id)
-        else:
-            local_broker.delay(execute_post_task, thread_id)
+    execute_post_task(thread_id)
 
-        logger.info(f"Thread {thread_id} approved and sent to broker queue.")
+    db = SessionLocal()
+    try:
+        thread = db.query(ThreadMemory).filter(ThreadMemory.id == thread_id).first()
+        if not thread:
+            return {"status": "failed", "detail": "Thread disappeared during posting"}
+        if thread.status == 'posted':
+            return {"status": "success", "detail": f"Posted live to {thread.platform}"}
+        return {"status": "failed", "detail": f"Posting failed (thread status: {thread.status}). Check logs for the exact error."}
     finally:
         db.close()
 

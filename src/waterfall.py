@@ -7,7 +7,6 @@ from src.ingestion import (
     Type2StaticSoup,
     Type3PlaywrightAuth,
     Type4LlmVision,
-
     BlockedException,
     DomParseException,
     IngestionException
@@ -21,7 +20,6 @@ STRATEGIES = {
     "Type2StaticSoup": Type2StaticSoup(),
     "Type3PlaywrightAuth": Type3PlaywrightAuth(),
     "Type4LlmVision": Type4LlmVision(),
-    
 }
 
 
@@ -37,10 +35,6 @@ def ingest_thread(url: str) -> dict:
         try:
             strategy = STRATEGIES[cached_strategy_name]
             data = strategy.fetch_thread_data(url)
-            # data.get("content", "") does NOT protect against an explicit
-            # None value (only a missing key) - a strategy (esp. Type4/
-            # Gemini) can return {"content": None}, which crashed
-            # detect_missing_gaper_listing's .lower() call downstream.
             detect_missing_gaper_listing(url, data.get("content") or "")
             return data
         except IngestionException as e:
@@ -50,10 +44,16 @@ def ingest_thread(url: str) -> dict:
     successful_strategy = None
     parsed_data = None
 
+    # FIX: previously only Type1 was ever added to this list (and only for
+    # dev.to/feed URLs), so every other URL fell straight through to the
+    # final "all strategies failed" error without trying Type2/3/4 at all.
+    # Full escalation chain, in order from cheapest/fastest to most expensive:
     escalation_list = []
     if "dev.to" in url or "feed" in url:
         escalation_list.append("Type1ApiRss")
-   
+    escalation_list.append("Type2StaticSoup")
+    escalation_list.append("Type3PlaywrightAuth")
+    escalation_list.append("Type4LlmVision")
 
     seen = set()
     escalation_order = [x for x in escalation_list if not (x in seen or seen.add(x))]

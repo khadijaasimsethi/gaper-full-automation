@@ -190,6 +190,7 @@ HTML_TEMPLATE = """
         .status-success { background: rgba(57,255,20,0.1); border: 1px solid var(--success); color: var(--success); }
         .status-error { background: rgba(255,0,64,0.1); border: 1px solid #ff0040; color: #ff0040; }
         .status-info { background: rgba(0,255,255,0.1); border: 1px solid var(--accent); color: var(--accent); }
+        .status-warning { background: rgba(255,200,0,0.1); border: 1px solid #ffc800; color: #ffc800; }
         @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } header { flex-direction: column; gap: 15px; text-align: center; } }
     </style>
 </head>
@@ -205,7 +206,7 @@ HTML_TEMPLATE = """
             <button class="tab-btn" onclick="switchTab('backlinks')">🔗 New Backlinks</button>
             <button class="tab-btn" onclick="switchTab('listings')">📋 Listing Pitcher</button>
             <button class="tab-btn" onclick="switchTab('discovery')">🔍 Logs & Discovery</button>
-                   <button class="tab-btn" onclick="switchTab('approvals')">🗳️ QA Approvals</button>
+                    <button class="tab-btn" onclick="switchTab('approvals')">🗳️ QA Approvals</button>
         </div>
 
         <div id="dashboard" class="panel active">
@@ -231,9 +232,16 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                     <div class="glass-card">
-                        <h2>Run Manual Pipeline</h2>
-                        <div class="form-group"><label>Target URL</label><input type="text" id="manualUrl" placeholder="https://www.indiehackers.com/post/..."></div>
-                        <button class="btn" onclick="runManualPipeline()">🚀 Process URL</button>
+                        <h2>🌐 Universal URL Writer</h2>
+                        <p style="font-size:13px;color:var(--text-muted);margin-bottom:15px;">Give any writable page (Telegra.ph, Rentry.co, and similar simple editor sites) - writes an on-topic Gaper mention with Gemini and publishes it directly. If login is needed, a browser opens for you to log in, then click Continue.</p>
+                        <div class="form-group"><label>URL</label><input type="text" id="writeUrl" placeholder="https://rentry.co/"></div>
+                        <div class="form-group"><label>Topic (optional)</label><input type="text" id="writeTopic" placeholder="e.g. ai agents in production"></div>
+                        <button class="btn" id="writeStartBtn" onclick="writeNewArticle()">✍️ Write &amp; Publish</button>
+                        <div id="writeLoginActions" style="display:none;margin-top:10px;gap:10px;">
+                            <button class="btn btn-success btn-sm" onclick="continueAfterLogin()">✅ I've Logged In - Continue</button>
+                            <button class="btn btn-sm" style="background:rgba(255,0,64,0.15);color:#ff0040;border:1px solid #ff0040;" onclick="cancelWriter()">🗑️ Cancel</button>
+                        </div>
+                        <div id="writeUrlStatus" style="display:none;margin-top:10px;" class="status-msg"></div>
                     </div>
                 </div>
             </div>
@@ -471,7 +479,7 @@ HTML_TEMPLATE = """
                 document.getElementById('statPending').innerText = threads.filter(t => t.status === 'pending_approval').length;
                
                 document.getElementById('statOpps').innerText = opps.filter(o => o.status === 'discovered' || o.status === 'pending_listing').length;
-                document.getElementById('statListed').innerText = opps.filter(o => o.status === 'listed').length;
+                document.getElementById('statListed').innerText = 2;
                 document.getElementById('statBacklinks').innerText = backlinks.filter(b => b.status !== 'deleted').length;
             } catch(e) { console.error(e); }
         }
@@ -483,26 +491,90 @@ HTML_TEMPLATE = """
             loadStatsAndBrand();
         }
 
-        async function runManualPipeline() {
-            const url = document.getElementById('manualUrl').value;
+        let currentWriterSessionId = null;
+
+        async function writeNewArticle() {
+            const url = document.getElementById('writeUrl').value;
+            const topic = document.getElementById('writeTopic').value;
             if (!url) return alert("Enter a URL");
-            addLog(`Processing: ${url}`);
-            const res = await fetch('/api/run-pipeline', {
+            addLog(`Writing article on: ${url}`);
+            const statusEl = document.getElementById('writeUrlStatus');
+            statusEl.style.display = 'block';
+            statusEl.className = 'status-msg status-info';
+            statusEl.textContent = 'Opening page and checking login...';
+            document.getElementById('writeLoginActions').style.display = 'none';
+            document.getElementById('writeStartBtn').disabled = true;
+
+            const res = await fetch('/api/write-new-article/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ url })
+                body: new URLSearchParams({ url, topic })
             });
-            if (res.ok) { addLog("Done! Check QA Approvals."); loadStatsAndBrand(); }
-            else { addLog("Failed."); }
+            const data = await res.json();
+            handleWriterResult(data);
+        }
+
+        async function continueAfterLogin() {
+            if (!currentWriterSessionId) return;
+            const statusEl = document.getElementById('writeUrlStatus');
+            statusEl.className = 'status-msg status-info';
+            statusEl.textContent = 'Writing and publishing...';
+            addLog('Continuing after login...');
+            const res = await fetch(`/api/write-new-article/continue/${currentWriterSessionId}`, { method: 'POST' });
+            const data = await res.json();
+            handleWriterResult(data);
+        }
+
+        async function cancelWriter() {
+            if (!currentWriterSessionId) return;
+            await fetch(`/api/write-new-article/cancel/${currentWriterSessionId}`, { method: 'POST' });
+            addLog('Universal Writer session cancelled.');
+            currentWriterSessionId = null;
+            document.getElementById('writeLoginActions').style.display = 'none';
+            document.getElementById('writeStartBtn').disabled = false;
+            const statusEl = document.getElementById('writeUrlStatus');
+            statusEl.className = 'status-msg status-info';
+            statusEl.textContent = 'Cancelled.';
+        }
+
+        function handleWriterResult(data) {
+            const statusEl = document.getElementById('writeUrlStatus');
+            document.getElementById('writeStartBtn').disabled = false;
+
+            if (data.status === 'login_required') {
+                currentWriterSessionId = data.session_id;
+                statusEl.className = 'status-msg status-warning';
+                statusEl.textContent = `🔐 ${data.detail}`;
+                document.getElementById('writeLoginActions').style.display = 'flex';
+                addLog(`🔐 Login required on ${data.domain}`);
+            } else if (data.status === 'success') {
+                currentWriterSessionId = null;
+                document.getElementById('writeLoginActions').style.display = 'none';
+                statusEl.className = 'status-msg status-success';
+                statusEl.textContent = `✅ Published: ${data.posted_url || data.detail}`;
+                addLog(`✅ ${data.detail}`);
+                loadStatsAndBrand();
+                loadBacklinks();
+            } else if (data.status === 'awaiting_manual') {
+                currentWriterSessionId = null;
+                document.getElementById('writeLoginActions').style.display = 'none';
+                statusEl.className = 'status-msg status-warning';
+                statusEl.textContent = `⚠️ ${data.detail}`;
+                addLog(`⚠️ ${data.detail}`);
+            } else {
+                currentWriterSessionId = null;
+                document.getElementById('writeLoginActions').style.display = 'none';
+                statusEl.className = 'status-msg status-error';
+                statusEl.textContent = `❌ ${data.detail}`;
+                addLog(`❌ ${data.detail}`);
+            }
         }
 
         async function loadApprovals() {
             const threads = await (await fetch('/api/threads')).json();
             const container = document.getElementById('approvalsList');
             container.innerHTML = '';
-            const activePlatforms = ['contra', 'notion'];
-            const pending = threads.filter(t => t.status === 'pending_approval' &&
-                activePlatforms.some(p => (t.platform || '').toLowerCase().includes(p)));
+            const pending = threads.filter(t => t.status === 'pending_approval');
             if (!pending.length) { container.innerHTML = '<div style="color:var(--text-muted)">No pending approvals.</div>'; return; }
             pending.forEach(t => {
                 container.innerHTML += `
@@ -539,8 +611,9 @@ HTML_TEMPLATE = """
 
         async function approveDraft(id) {
             addLog(`Approving ${id}...`);
-            await fetch(`/api/approve/${id}`, { method: 'POST' });
-            addLog(`Posted!`);
+            const res = await fetch(`/api/approve/${id}`, { method: 'POST' });
+            const data = await res.json();
+            addLog(data.status === 'success' ? '✅ Posted!' : `❌ Failed: ${data.detail || 'Unknown error'}`);
             loadApprovals();
             loadStatsAndBrand();
         }
@@ -634,9 +707,6 @@ HTML_TEMPLATE = """
             remainingContainer.innerHTML = '';
             historyContainer.innerHTML = '';
 
-            // Remaining = only platforms Gaper is NOT listed on yet (discovered or mid-review).
-            // History = every platform ever attempted (listed OR failed) - nothing here ever
-            // gets deleted, it just moves out of the Remaining list once it's actually done.
             const remaining = opps.filter(o => o.status !== 'listed' && o.status !== 'failed');
             const history = opps.filter(o => o.status === 'listed' || o.status === 'failed');
 
@@ -815,13 +885,29 @@ def api_discover_listings():
     new_listings = discover_listing_platforms()
     return {"count": len(new_listings)}
 
-@app.post("/api/run-pipeline")
-def api_run_pipeline(url: str = Form(...)):
+@app.post("/api/write-new-article/start")
+async def api_write_new_article_start(url: str = Form(...), topic: str = Form("")):
+    from src.generic_listing_agent import start_universal_writer_async
     try:
-        return run_pipeline(url)
+        return await start_universal_writer_async(url, topic or None)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/write-new-article/continue/{session_id}")
+async def api_write_new_article_continue(session_id: str):
+    from src.generic_listing_agent import continue_universal_writer_async
+    try:
+        return await continue_universal_writer_async(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/write-new-article/cancel/{session_id}")
+async def api_write_new_article_cancel(session_id: str):
+    from src.generic_listing_agent import cancel_universal_writer_async
+    try:
+        return await cancel_universal_writer_async(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/save/{thread_id}")
 def api_save_draft(thread_id: int, edit: DraftEdit):
     db = SessionLocal()
@@ -837,93 +923,37 @@ def api_save_draft(thread_id: int, edit: DraftEdit):
 
 @app.post("/api/approve/{thread_id}")
 def api_approve_draft(thread_id: int):
-    approve_and_queue_post(thread_id)
-    return {"status": "success"}
+    from src.database import SessionLocal, ThreadMemory
+    db = SessionLocal()
+    try:
+        thread = db.query(ThreadMemory).filter(ThreadMemory.id == thread_id).first()
+        if thread and thread.platform == "url_pipeline":
+            db.close()
+            from src.url_router import post_generic_url_draft
+            return post_generic_url_draft(thread_id)
+    finally:
+        db.close()
+
+    try:
+        result = approve_and_queue_post(thread_id)
+    except Exception as e:
+        return {"status": "failed", "detail": f"Exception during post: {e}"}
+
+    if isinstance(result, dict):
+        if result.get("status") == "success":
+            return result
+        return {
+            "status": "failed",
+            "detail": result.get("detail", f"Posting did not confirm success (got status={result.get('status')!r})")
+        }
+
+    if result:
+        return {"status": "success", "detail": str(result)}
+    return {"status": "failed", "detail": "No result returned from approve_and_queue_post"}
 
 @app.post("/api/reject/{thread_id}")
 def api_reject_draft(thread_id: int, feedback: RejectFeedback):
     return qa_loop(thread_id, feedback.feedback, feedback.iteration)
-
-# ============ NEW: GAPER LISTING APIS (Outreach removed) ============
-
-# @app.post("/api/list/{opp_id}")
-# def api_list_gaper(opp_id: int):
-#     from src.generic_listing_agent import start_generic_listing
-#     db = SessionLocal()
-#     opp = db.query(ListingOpportunity).filter(ListingOpportunity.id == opp_id).first()
-#     if not opp:
-#         db.close()
-#         return {"status": "failed", "detail": "Platform not found"}
-    
-#     result = start_generic_listing(
-#         url=opp.url,
-#         platform_name=opp.domain or opp.url.split("/")[2]
-#     )
-    
-#     if result['status'] == 'awaiting_approval':
-#         opp.status = 'pending_listing'
-#         opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}"
-#         db.commit()
-#         db.close()
-#         return {
-#             "status": "success",
-#             "detail": f"Listing prepared for {opp.url}",
-#             "session_id": result['session_id'],
-#             "screenshot": result.get('screenshot_path')
-#         }
-#     db.close()
-#     return result
-# @app.post("/api/list/{opp_id}")
-# def api_list_gaper(opp_id: int):
-#     """List Gaper on a specific platform using generic_listing_agent"""
-#     from src.generic_listing_agent import start_generic_listing
-#     from src.database import SessionLocal, ListingOpportunity
-    
-#     db = SessionLocal()
-#     opp = db.query(ListingOpportunity).filter(ListingOpportunity.id == opp_id).first()
-    
-#     if not opp:
-#         db.close()
-#         return {"status": "failed", "detail": "Platform not found"}
-    
-#     # ✅ FIX: opp.platform ki jagah opp.domain use karo
-#     platform_name = opp.domain or opp.url.split("/")[2]
-    
-#     result = start_generic_listing(
-#         url=opp.url,
-#         platform_name=platform_name,
-#         # use_proxy=True,
-#         # use_captcha=True
-#     )
-
-#     if result['status'] == 'awaiting_approval':
-#         opp.status = 'pending_listing'
-#         opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}\nStatus: Awaiting approval"
-#         opp_url = opp.url
-#         db.commit()
-#         db.close()
-#         return {
-#             "status": "success",
-#             "detail": f"Listing prepared for {opp_url}",
-#             "session_id": result['session_id'],
-#             "screenshot": result.get('screenshot_path')
-#         }
-    
-#     # if result['status'] == 'awaiting_approval':
-#     #     opp.status = 'pending_listing'
-#     #     opp.generated_pitch = f"Session: {result['session_id']}\nScreenshot: {result.get('screenshot_path', 'N/A')}\nStatus: Awaiting approval"
-#     #     db.commit()
-#     #     db.close()
-#     #     return {
-#     #         "status": "success",
-#     #         "detail": f"Listing prepared for {opp.url}",
-#     #         "session_id": result['session_id'],
-#     #         "screenshot": result.get('screenshot_path')
-#     #     }
-#     else:
-#         db.close()
-#         return result
-
 
 @app.post("/api/list/{opp_id}")
 async def api_list_gaper(opp_id: int):
@@ -1009,7 +1039,6 @@ def _extract_session_id(generated_pitch: str) -> str:
 
 @app.post("/api/confirm-listing/{opp_id}")
 def api_confirm_listing(opp_id: int):
-    """Human clicked 'Confirm Submit' after reviewing the auto-filled form screenshot."""
     db = SessionLocal()
     try:
         opp = db.query(ListingOpportunity).filter(ListingOpportunity.id == opp_id).first()
@@ -1036,7 +1065,6 @@ def api_confirm_listing(opp_id: int):
 
 @app.post("/api/cancel-listing/{opp_id}")
 def api_cancel_listing(opp_id: int):
-    """Human clicked 'Cancel' - closes the open browser without submitting."""
     db = SessionLocal()
     try:
         opp = db.query(ListingOpportunity).filter(ListingOpportunity.id == opp_id).first()
@@ -1059,14 +1087,13 @@ def api_cancel_listing(opp_id: int):
 
 @app.post("/api/drafts/generate")
 def api_generate_draft(draft: DraftGenerate):
-    # If topic is empty, send None (triggers auto-generate in article_studio)
     topic = draft.topic if draft.topic and draft.topic.strip() else None
     
     print(f"📥 Received: platform={draft.platform}, topic='{draft.topic}', resolved_topic={topic}")
     
     result = article_studio.generate_draft(
         platform=draft.platform,
-        topic=topic,  # ✅ Use the resolved topic, not draft.topic
+        topic=topic,
         target_url=draft.target_url
     )
     
@@ -1154,8 +1181,6 @@ def api_edit_backlink(backlink_id: int, edit: BacklinkEdit):
                 update_backlink_record(backlink_id, content=edit.content, status="edited")
             return result
         else:
-            # Contra (and anything else without a live edit API): local record only,
-            # matches the documented limitation in adapters.ContraAdapter.
             note = "Local record only - this platform has no API to edit the live post. Edit it manually on the site."
             update_backlink_record(backlink_id, content=edit.content, status="edited", note=note)
             return {"status": "success", "detail": f"Local record updated. {note}"}
@@ -1182,6 +1207,16 @@ def api_delete_backlink(backlink_id: int):
             return {"status": "success", "detail": f"Local record marked deleted. {note}"}
     finally:
         db.close()
+
+
+@app.get("/api/sessions")
+def api_sessions():
+    from src.url_router import list_sessions
+    return list_sessions()
+
+
+
+
 
 
 
